@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AppProvider, AppContext } from './context/AppContext';
 import Navbar from './components/Navbar';
@@ -7,7 +7,6 @@ import POS from './pages/POS';
 import Admin from './pages/Admin';
 import Login from './pages/Login';
 
-// Protected Route component
 const ProtectedRoute = ({ children, requireAdmin = false }) => {
   const { user } = React.useContext(AppContext);
   
@@ -20,10 +19,10 @@ const ProtectedRoute = ({ children, requireAdmin = false }) => {
 function App() {
   return (
     <AppProvider>
-      <BrowserRouter>
+      <HashRouter>
         <div className="app">
           <Navbar />
-          <main style={{ minHeight: '100vh', paddingTop: '60px' }}>
+          <main style={{ minHeight: 'calc(100vh - 60px)', paddingTop: '60px' }}>
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/pos" element={
@@ -39,9 +38,9 @@ function App() {
               <Route path="/" element={<Navigate to="/pos" />} />
             </Routes>
           </main>
-          <Toaster position="bottom-right" />
+          <Toaster position="bottom-center" />
         </div>
-      </BrowserRouter>
+      </HashRouter>
     </AppProvider>
   );
 }

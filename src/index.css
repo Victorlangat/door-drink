@@ -15,14 +15,56 @@ body {
 
 button:hover {
   opacity: 0.9;
-  transform: translateY(-1px);
   transition: all 0.2s;
 }
 
 button:active {
-  transform: translateY(0);
+  transform: scale(0.98);
 }
 
 .app {
   min-height: 100vh;
+}
+
+/* Mobile Responsive Utilities */
+.container {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+@media (max-width: 768px) {
+  .container {
+    padding: 0 0.75rem;
+  }
+  
+  .hide-mobile {
+    display: none;
+  }
+  
+  .show-mobile {
+    display: block;
+  }
+}
+
+@media (min-width: 769px) {
+  .show-mobile {
+    display: none;
+  }
+}
+
+/* Touch-friendly buttons */
+@media (max-width: 768px) {
+  button, 
+  .clickable {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  input, 
+  select, 
+  textarea {
+    font-size: 16px !important; /* Prevents zoom on iOS */
+  }
 }
