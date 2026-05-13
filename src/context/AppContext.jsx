@@ -1,407 +1,491 @@
 import React, { createContext, useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
+import { supabase, setCurrentStore } from '../services/supabase';
 
 export const AppContext = createContext();
 
 export const AppProvider = ({ children }) => {
-  // State
   const [products, setProducts] = useState([]);
   const [cart, setCart] = useState([]);
   const [orders, setOrders] = useState([]);
-  const [user, setUser] = useState(null);
-  const [inventory, setInventory] = useState({});
-  
-  // Security & Daily Tracking States
-  const [dailySales, setDailySales] = useState([]);
-  const [dailyCounter, setDailyCounter] = useState(0);
-  const [currentDate, setCurrentDate] = useState(new Date().toDateString());
-  const [securityLogs, setSecurityLogs] = useState([]);
-  const [projectedEarnings, setProjectedEarnings] = useState({
-    daily: 0,
-    weekly: 0,
-    monthly: 0,
-    basedOnInventory: 0
-  });
+  const [store, setStore] = useState(null);
+  const [admin, setAdmin] = useState(null);
   const [customers, setCustomers] = useState([]);
-
-  // Load data from localStorage
+  const [dailyCounter, setDailyCounter] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [securityLogs, setSecurityLogs] = useState([]);
+  
+  // Load saved data on startup
   useEffect(() => {
-    const savedCart = localStorage.getItem('cart');
-    const savedUser = localStorage.getItem('user');
-    const savedDailySales = localStorage.getItem('dailySales');
-    const savedSecurityLogs = localStorage.getItem('securityLogs');
-    const savedCurrentDate = localStorage.getItem('currentDate');
-    const savedCustomers = localStorage.getItem('customers');
+    const savedStore = localStorage.getItem('sipsync_store');
+    const savedAdmin = localStorage.getItem('sipsync_admin');
     
-    if (savedCart) setCart(JSON.parse(savedCart));
-    if (savedUser) setUser(JSON.parse(savedUser));
-    if (savedDailySales) setDailySales(JSON.parse(savedDailySales));
-    if (savedSecurityLogs) setSecurityLogs(JSON.parse(savedSecurityLogs));
-    if (savedCustomers) setCustomers(JSON.parse(savedCustomers));
-    
-    // Check if date changed (new day)
-    const today = new Date().toDateString();
-    if (savedCurrentDate && savedCurrentDate !== today) {
-      setDailyCounter(0);
-      setCurrentDate(today);
-      localStorage.setItem('currentDate', today);
-      addSecurityLog('SYSTEM', 'New day started - Counter reset');
-    } else if (savedCurrentDate) {
-      setCurrentDate(savedCurrentDate);
-    } else {
-      setCurrentDate(today);
-      localStorage.setItem('currentDate', today);
+    if (savedStore) {
+      try {
+        const storeData = JSON.parse(savedStore);
+        setStore(storeData);
+        setCurrentStore(storeData.id);
+        loadStoreData(storeData.id);
+      } catch (e) {
+        console.error('Error loading store:', e);
+      }
     }
     
-    // Load sample products
-    loadSampleProducts();
-    calculateProjections();
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem('dailySales', JSON.stringify(dailySales));
-    localStorage.setItem('customers', JSON.stringify(customers));
-    calculateProjections();
-  }, [dailySales, customers]);
-
-  useEffect(() => {
-    localStorage.setItem('securityLogs', JSON.stringify(securityLogs));
-  }, [securityLogs]);
-
-  const addSecurityLog = (action, details, userEmail = null) => {
-    const log = {
-      id: Date.now(),
-      timestamp: new Date().toISOString(),
-      action,
-      details,
-      user: userEmail || user?.email || 'system'
-    };
-    setSecurityLogs(prev => [log, ...prev].slice(0, 500));
-  };
-
-  const loadSampleProducts = () => {
-    const sampleProducts = [
-      { id: 1, name: 'Johnnie Walker Black Label', category: 'Whisky', price: 3500, stock: 45, image: '' },
-      { id: 2, name: 'Absolut Vodka', category: 'Vodka', price: 2200, stock: 30, image: '' },
-      { id: 3, name: 'Beefeater Gin', category: 'Gin', price: 2800, stock: 20, image: '' },
-      { id: 4, name: 'Bacardi Carta Blanca', category: 'Rum', price: 1800, stock: 50, image: '' },
-      { id: 5, name: 'Jose Cuervo Tequila', category: 'Tequila', price: 3200, stock: 12, image: '' },
-      { id: 6, name: 'Heineken Beer', category: 'Beer', price: 250, stock: 200, image: '' },
-      { id: 7, name: 'Jameson Irish Whiskey', category: 'Whisky', price: 2900, stock: 35, image: '' },
-      { id: 8, name: 'Smirnoff Red Label', category: 'Vodka', price: 1500, stock: 60, image: '' },
-      { id: 9, name: 'Captain Morgan Spiced Gold', category: 'Rum', price: 2200, stock: 25, image: '' },
-      { id: 10, name: 'Moët & Chandon Champagne', category: 'Champagne', price: 8500, stock: 8, image: '' }
-    ];
-    setProducts(sampleProducts);
+    if (savedAdmin) {
+      try {
+        setAdmin(JSON.parse(savedAdmin));
+      } catch (e) {
+        console.error('Error loading admin:', e);
+      }
+    }
     
-    const inventoryMap = {};
-    sampleProducts.forEach(p => { inventoryMap[p.id] = p.stock; });
-    setInventory(inventoryMap);
+    setLoading(false);
+  }, []);
+  
+  // Persist store
+  const setStoreWithPersist = (storeData) => {
+    setStore(storeData);
+    if (storeData) {
+      localStorage.setItem('sipsync_store', JSON.stringify(storeData));
+      setCurrentStore(storeData.id);
+    } else {
+      localStorage.removeItem('sipsync_store');
+    }
   };
-
+  
+  // Persist admin
+  const setAdminWithPersist = (adminData) => {
+    setAdmin(adminData);
+    if (adminData) {
+      localStorage.setItem('sipsync_admin', JSON.stringify(adminData));
+    } else {
+      localStorage.removeItem('sipsync_admin');
+    }
+  };
+  
+  // Add security log
+  const addSecurityLog = async (action, details) => {
+    if (!store) return;
+    
+    const newLog = {
+      store_id: store.id,
+      action: action,
+      details: details,
+      user_email: admin?.email || store?.store_email || 'system',
+      created_at: new Date().toISOString()
+    };
+    
+    try {
+      const { data, error } = await supabase
+        .from('security_logs')
+        .insert([newLog])
+        .select();
+      
+      if (!error && data) {
+        setSecurityLogs(prev => [data[0], ...prev]);
+      }
+    } catch (err) {
+      console.error('Error adding security log:', err);
+    }
+  };
+  
+  // Load store data
+  const loadStoreData = async (storeId) => {
+    setLoading(true);
+    try {
+      // Load products
+      const { data: productsData, error: productsError } = await supabase
+        .from('products')
+        .select('*')
+        .eq('store_id', storeId);
+      
+      if (productsError) throw productsError;
+      setProducts(productsData || []);
+      
+      // Load orders
+      const { data: ordersData, error: ordersError } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('store_id', storeId)
+        .order('created_at', { ascending: false });
+      
+      if (ordersError) throw ordersError;
+      setOrders(ordersData || []);
+      
+      // Load customers
+      const { data: customersData, error: customersError } = await supabase
+        .from('customers')
+        .select('*')
+        .eq('store_id', storeId)
+        .order('total_spent', { ascending: false });
+      
+      if (customersError) throw customersError;
+      setCustomers(customersData || []);
+      
+      // Load security logs
+      const { data: logsData, error: logsError } = await supabase
+        .from('security_logs')
+        .select('*')
+        .eq('store_id', storeId)
+        .order('created_at', { ascending: false })
+        .limit(200);
+      
+      if (logsError) throw logsError;
+      setSecurityLogs(logsData || []);
+      
+      // Get today's counter from daily_sales table
+      const today = new Date().toISOString().split('T')[0];
+      const { data: todayData, error: todayError } = await supabase
+        .from('daily_sales')
+        .select('transaction_count, counter_number')
+        .eq('store_id', storeId)
+        .eq('sale_date', today)
+        .maybeSingle();
+      
+      if (!todayError && todayData) {
+        setDailyCounter(todayData.transaction_count || 0);
+      } else {
+        // If no daily sales record exists for today, create one
+        const { error: insertError } = await supabase
+          .from('daily_sales')
+          .insert([{
+            store_id: storeId,
+            sale_date: today,
+            total_revenue: 0,
+            transaction_count: 0,
+            counter_number: 0
+          }]);
+        
+        if (!insertError) {
+          setDailyCounter(0);
+        }
+      }
+      
+    } catch (err) {
+      console.error('Error loading store data:', err);
+      toast.error('Failed to load store data');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Cart persistence
+  useEffect(() => {
+    const savedCart = localStorage.getItem('sipsync_cart');
+    if (savedCart) setCart(JSON.parse(savedCart));
+  }, []);
+  
+  useEffect(() => {
+    localStorage.setItem('sipsync_cart', JSON.stringify(cart));
+  }, [cart]);
+  
   // Cart functions
   const addToCart = (product, quantity = 1) => {
-    const existingItem = cart.find(item => item.id === product.id);
-    
-    if (existingItem) {
-      const newQuantity = existingItem.quantity + quantity;
-      if (newQuantity > inventory[product.id]) {
-        toast.error(`Only ${inventory[product.id]} items in stock!`);
+    const existing = cart.find(item => item.id === product.id);
+    if (existing) {
+      const newQty = existing.quantity + quantity;
+      if (newQty > product.stock) {
+        toast.error(`Only ${product.stock} in stock!`);
         return;
       }
-      setCart(cart.map(item => 
-        item.id === product.id ? { ...item, quantity: newQuantity } : item
-      ));
+      setCart(cart.map(item => item.id === product.id ? { ...item, quantity: newQty } : item));
     } else {
-      if (quantity > inventory[product.id]) {
-        toast.error(`Only ${inventory[product.id]} items in stock!`);
+      if (quantity > product.stock) {
+        toast.error(`Only ${product.stock} in stock!`);
         return;
       }
       setCart([...cart, { ...product, quantity }]);
     }
-    toast.success(`Added ${product.name}`);
+    toast.success(`${product.name} added`);
   };
   
-  const removeFromCart = (productId) => {
-    setCart(cart.filter(item => item.id !== productId));
-    toast.success('Item removed');
+  const removeFromCart = (id) => {
+    const item = cart.find(i => i.id === id);
+    setCart(cart.filter(i => i.id !== id));
+    if (item) toast.success(`${item.name} removed`);
   };
   
-  const updateQuantity = (productId, quantity) => {
+  const updateQuantity = (id, quantity) => {
     if (quantity <= 0) {
-      removeFromCart(productId);
+      removeFromCart(id);
       return;
     }
-    
-    const product = products.find(p => p.id === productId);
-    if (quantity > inventory[productId]) {
-      toast.error(`Only ${inventory[productId]} in stock!`);
+    const product = products.find(p => p.id === id);
+    if (quantity > product.stock) {
+      toast.error(`Only ${product.stock} in stock!`);
       return;
     }
-    
-    setCart(cart.map(item => 
-      item.id === productId ? { ...item, quantity } : item
-    ));
+    setCart(cart.map(item => item.id === id ? { ...item, quantity } : item));
   };
-
+  
   const clearCart = () => {
     setCart([]);
+    toast.success('Cart cleared');
   };
-
-  // Process order (POS checkout)
-  const processOrder = (paymentMethod, customerName = '', customerPhone = '') => {
+  
+  // Process order
+  const processOrder = async (paymentMethod, customerName = '', customerPhone = '') => {
     if (cart.length === 0) {
       toast.error('Cart is empty!');
       return false;
     }
+    if (!store) {
+      toast.error('No store selected!');
+      return false;
+    }
     
-    // Verify stock
     for (const item of cart) {
-      if (item.quantity > inventory[item.id]) {
-        toast.error(`${item.name} - Only ${inventory[item.id]} left!`);
+      const product = products.find(p => p.id === item.id);
+      if (item.quantity > product.stock) {
+        toast.error(`${item.name} - Only ${product.stock} left!`);
         return false;
       }
     }
     
-    const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    const total = subtotal;
-    const orderId = Date.now();
+    const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const orderNumber = `POS-${String((dailyCounter || 0) + 1).padStart(4, '0')}`;
     
-    // Update inventory
-    const newInventory = { ...inventory };
-    cart.forEach(item => {
-      newInventory[item.id] -= item.quantity;
-    });
-    setInventory(newInventory);
-    
-    // Update products stock
-    setProducts(products.map(p => ({
-      ...p,
-      stock: newInventory[p.id] || p.stock
-    })));
-    
-    // Create order record
-    const newOrder = {
-      id: orderId,
-      orderNumber: `POS-${String(dailyCounter + 1).padStart(4, '0')}`,
-      items: [...cart],
-      subtotal,
-      total,
-      paymentMethod,
-      customerName: customerName || 'Walk-in Customer',
-      customerPhone,
-      date: new Date().toISOString(),
-      status: 'completed'
-    };
-    
-    setOrders([newOrder, ...orders]);
-    
-    // Add to daily sales
-    const dailyRecord = {
-      id: orderId,
-      orderNumber: newOrder.orderNumber,
-      total,
-      items: cart.map(item => ({ name: item.name, quantity: item.quantity, price: item.price })),
-      time: new Date().toLocaleTimeString(),
-      customerName: newOrder.customerName,
-      paymentMethod
-    };
-    
-    setDailySales(prev => [...prev, dailyRecord]);
-    setDailyCounter(prev => prev + 1);
-    
-    // Update customer records
-    if (customerName && customerPhone) {
-      const existingCustomer = customers.find(c => c.phone === customerPhone);
-      if (existingCustomer) {
-        setCustomers(customers.map(c => 
-          c.phone === customerPhone 
-            ? { ...c, totalSpent: c.totalSpent + total, orderCount: c.orderCount + 1, lastOrder: new Date().toISOString() }
-            : c
-        ));
-      } else {
-        setCustomers([...customers, {
-          name: customerName,
-          phone: customerPhone,
-          totalSpent: total,
-          orderCount: 1,
-          firstOrder: new Date().toISOString(),
-          lastOrder: new Date().toISOString()
-        }]);
+    try {
+      // Update product stocks
+      for (const item of cart) {
+        const product = products.find(p => p.id === item.id);
+        await supabase
+          .from('products')
+          .update({ stock: product.stock - item.quantity })
+          .eq('id', item.id)
+          .eq('store_id', store.id);
       }
-    }
-    
-    // Security logging
-    addSecurityLog('ORDER_COMPLETED', `Order #${newOrder.orderNumber} | Total: KSh ${total} | Items: ${cart.length} | Payment: ${paymentMethod}`, user?.email);
-    
-    // Clear cart
-    setCart([]);
-    
-    toast.success(`Order ${newOrder.orderNumber} completed!`);
-    return true;
-  };
-  
-  // Calculate projections
-  const calculateProjections = () => {
-    const today = new Date().toDateString();
-    const todaySales = dailySales.filter(sale => 
-      new Date(sale.time).toDateString() === today
-    );
-    const todayTotal = todaySales.reduce((sum, sale) => sum + sale.total, 0);
-    
-    // 7-day average
-    let last7Total = 0;
-    let daysWithSales = 0;
-    for (let i = 0; i < 7; i++) {
-      const date = new Date();
-      date.setDate(date.getDate() - i);
-      const dateStr = date.toDateString();
-      const dayTotal = dailySales.filter(sale => new Date(sale.time).toDateString() === dateStr)
-        .reduce((sum, sale) => sum + sale.total, 0);
-      if (dayTotal > 0 || i === 0) {
-        last7Total += dayTotal;
-        daysWithSales++;
+      
+      // Save order
+      const { data: newOrder, error: orderError } = await supabase
+        .from('orders')
+        .insert([{
+          store_id: store.id,
+          order_number: orderNumber,
+          items: cart.map(item => ({ 
+            id: item.id, 
+            name: item.name, 
+            quantity: item.quantity, 
+            price: item.price,
+            category: item.category 
+          })),
+          total: total,
+          payment_method: paymentMethod,
+          customer_name: customerName || 'Walk-in Customer',
+          customer_phone: customerPhone,
+          created_at: new Date().toISOString()
+        }])
+        .select();
+      
+      if (orderError) throw orderError;
+      
+      // Update or create customer
+      if (customerName && customerPhone) {
+        const { data: existingCustomer } = await supabase
+          .from('customers')
+          .select('*')
+          .eq('phone', customerPhone)
+          .eq('store_id', store.id)
+          .maybeSingle();
+        
+        if (existingCustomer) {
+          await supabase
+            .from('customers')
+            .update({
+              total_spent: (existingCustomer.total_spent || 0) + total,
+              order_count: (existingCustomer.order_count || 0) + 1,
+              last_order: new Date().toISOString()
+            })
+            .eq('id', existingCustomer.id);
+        } else {
+          await supabase.from('customers').insert([{
+            store_id: store.id,
+            name: customerName,
+            phone: customerPhone,
+            total_spent: total,
+            order_count: 1,
+            first_order: new Date().toISOString(),
+            last_order: new Date().toISOString()
+          }]);
+        }
       }
+      
+      // Add security log
+      await addSecurityLog(
+        'ORDER_COMPLETED',
+        `Order #${orderNumber} | Total: KSh ${total} | Items: ${cart.length} | Payment: ${paymentMethod}`
+      );
+      
+      // Refresh all data
+      await loadStoreData(store.id);
+      setCart([]);
+      
+      toast.success(`Order ${orderNumber} completed!`);
+      return { success: true, orderNumber, total };
+    } catch (error) {
+      console.error('Order error:', error);
+      toast.error('Failed to process order');
+      return false;
     }
-    const avgDailySales = daysWithSales ? last7Total / daysWithSales : todayTotal;
-    
-    const inventoryValue = products.reduce((sum, p) => sum + (p.price * p.stock), 0);
-    
-    setProjectedEarnings({
-      daily: todayTotal,
-      weekly: avgDailySales * 7,
-      monthly: avgDailySales * 30,
-      inventoryValue,
-      averageDailyTrend: avgDailySales
-    });
   };
   
   // Admin functions
-  const updateInventory = (productId, newStock) => {
-    if (newStock < 0) return false;
+  const updateInventory = async (productId, newStock) => {
     const product = products.find(p => p.id === productId);
-    const oldStock = inventory[productId];
+    await supabase
+      .from('products')
+      .update({ stock: newStock })
+      .eq('id', productId)
+      .eq('store_id', store.id);
     
-    setInventory({ ...inventory, [productId]: newStock });
     setProducts(products.map(p => p.id === productId ? { ...p, stock: newStock } : p));
-    
-    addSecurityLog('INVENTORY_UPDATE', `${product?.name}: ${oldStock} → ${newStock}`, user?.email);
+    await addSecurityLog('INVENTORY_UPDATE', `${product?.name}: ${product?.stock} → ${newStock}`);
     toast.success('Inventory updated');
-    calculateProjections();
-    return true;
   };
   
-  const addNewProduct = (product, imageFile = null) => {
-    const newId = Date.now();
-    let imageUrl = '';
+  const addNewProduct = async (product) => {
+    const { data, error } = await supabase
+      .from('products')
+      .insert([{
+        store_id: store.id,
+        name: product.name,
+        category: product.category || 'Uncategorized',
+        price: parseFloat(product.price),
+        stock: parseInt(product.stock)
+      }])
+      .select()
+      .single();
     
-    if (imageFile) {
-      imageUrl = URL.createObjectURL(imageFile);
-    }
-    
-    const newProduct = {
-      id: newId,
-      name: product.name,
-      category: product.category,
-      price: parseFloat(product.price),
-      stock: parseInt(product.stock),
-      image: imageUrl
-    };
-    
-    setProducts([...products, newProduct]);
-    setInventory({ ...inventory, [newId]: newProduct.stock });
-    addSecurityLog('PRODUCT_ADDED', `Added: ${product.name} (Stock: ${product.stock}, Price: KSh ${product.price})`, user?.email);
+    if (error) throw error;
+    setProducts([...products, data]);
+    await addSecurityLog('PRODUCT_ADDED', `Added: ${product.name} (Price: KSh ${product.price}, Stock: ${product.stock})`);
     toast.success('Product added');
-    calculateProjections();
+    return data;
   };
   
-  const updateProductImage = (productId, imageFile) => {
-    const imageUrl = URL.createObjectURL(imageFile);
-    setProducts(products.map(p => p.id === productId ? { ...p, image: imageUrl } : p));
-    addSecurityLog('IMAGE_UPDATED', `Updated image for product ID: ${productId}`, user?.email);
-    toast.success('Image updated');
-  };
-  
-  const deleteProduct = (productId) => {
+  const deleteProduct = async (productId) => {
     const product = products.find(p => p.id === productId);
+    await supabase
+      .from('products')
+      .delete()
+      .eq('id', productId)
+      .eq('store_id', store.id);
+    
     setProducts(products.filter(p => p.id !== productId));
-    const newInventory = { ...inventory };
-    delete newInventory[productId];
-    setInventory(newInventory);
-    addSecurityLog('PRODUCT_DELETED', `Deleted: ${product?.name}`, user?.email);
+    await addSecurityLog('PRODUCT_DELETED', `Deleted: ${product?.name}`);
     toast.success('Product deleted');
-    calculateProjections();
   };
   
-  // Analytics
-  const getSalesAnalytics = () => {
+  // Analytics functions
+  const getSalesAnalytics = async () => {
+    if (!store) return { totalRevenue: 0, totalOrders: 0, averageOrderValue: 0, categorySales: {}, topProducts: [], repeatCustomers: 0 };
+    
+    const { data: ordersList } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('store_id', store.id);
+    
+    const totalRevenue = (ordersList || []).reduce((sum, o) => sum + (o.total || 0), 0);
+    const totalOrders = ordersList?.length || 0;
+    const averageOrderValue = totalOrders ? (totalRevenue / totalOrders).toFixed(2) : 0;
+    
+    // Get fresh customers for repeat count
+    const { data: customersList } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('store_id', store.id);
+    const repeatCustomers = (customersList || []).filter(c => (c.order_count || 0) > 1).length;
+    
     const categorySales = {};
-    orders.forEach(order => {
-      order.items.forEach(item => {
-        const category = products.find(p => p.name === item.name)?.category || 'Other';
-        categorySales[category] = (categorySales[category] || 0) + (item.price * item.quantity);
-      });
+    (ordersList || []).forEach(order => {
+      if (order.items && order.items.length > 0) {
+        order.items.forEach(item => {
+          const category = item.category || 'Other';
+          categorySales[category] = (categorySales[category] || 0) + (item.price * item.quantity);
+        });
+      }
     });
     
-    const topProducts = {};
-    orders.forEach(order => {
-      order.items.forEach(item => {
-        topProducts[item.name] = (topProducts[item.name] || 0) + item.quantity;
-      });
+    const productSales = {};
+    (ordersList || []).forEach(order => {
+      if (order.items && order.items.length > 0) {
+        order.items.forEach(item => {
+          if (!productSales[item.name]) {
+            productSales[item.name] = { name: item.name, quantity: 0, revenue: 0 };
+          }
+          productSales[item.name].quantity += item.quantity;
+          productSales[item.name].revenue += item.price * item.quantity;
+        });
+      }
     });
+    const topProducts = Object.values(productSales).sort((a, b) => b.quantity - a.quantity).slice(0, 5);
     
-    return {
-      totalRevenue: orders.reduce((sum, o) => sum + o.total, 0),
-      totalOrders: orders.length,
-      averageOrderValue: orders.length ? (orders.reduce((sum, o) => sum + o.total, 0) / orders.length).toFixed(2) : 0,
-      categorySales,
-      topProducts: Object.entries(topProducts).sort((a, b) => b[1] - a[1]).slice(0, 5),
-      repeatCustomers: customers.filter(c => c.orderCount > 1).length
-    };
+    return { totalRevenue, totalOrders, averageOrderValue, categorySales, topProducts, repeatCustomers };
   };
   
-  const getDailyReport = () => {
-    const today = new Date().toDateString();
-    const todaysTransactions = dailySales.filter(sale => 
-      new Date(sale.time).toDateString() === today
-    );
+  const getDailyReport = async () => {
+    if (!store) return { date: new Date().toDateString(), transactionCount: 0, totalRevenue: 0, transactions: [], counterNumber: 0 };
+    
+    const today = new Date().toISOString().split('T')[0];
+    
+    const { data: todayOrders } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('store_id', store.id)
+      .gte('created_at', `${today}T00:00:00`)
+      .lte('created_at', `${today}T23:59:59`)
+      .order('created_at', { ascending: false });
+    
+    const transactions = (todayOrders || []).map(o => ({
+      id: o.id,
+      orderNumber: o.order_number,
+      time: new Date(o.created_at).toLocaleTimeString(),
+      customerName: o.customer_name,
+      paymentMethod: o.payment_method,
+      total: o.total || 0
+    }));
+    
+    const totalRevenue = transactions.reduce((sum, t) => sum + t.total, 0);
     
     return {
       date: today,
-      transactionCount: todaysTransactions.length,
-      totalRevenue: todaysTransactions.reduce((sum, sale) => sum + sale.total, 0),
-      transactions: todaysTransactions,
+      transactionCount: transactions.length,
+      totalRevenue,
+      transactions,
       counterNumber: dailyCounter
     };
   };
   
-  const getSecurityLogs = (limit = 100) => securityLogs.slice(0, limit);
+  const getSecurityLogs = async () => {
+    if (!store) return [];
+    return securityLogs;
+  };
+  
+  const getInventoryValue = () => {
+    return products.reduce((sum, p) => sum + ((p.price || 0) * (p.stock || 0)), 0);
+  };
+  
+  const getCartTotal = () => cart.reduce((sum, item) => sum + ((item.price || 0) * (item.quantity || 0)), 0);
+  const getCartCount = () => cart.reduce((count, item) => count + (item.quantity || 0), 0);
+  
+  if (loading && !store) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+        <div>Loading...</div>
+      </div>
+    );
+  }
   
   return (
     <AppContext.Provider value={{
-      products,
-      cart,
-      orders,
-      user,
-      setUser,
-      addToCart,
-      removeFromCart,
-      updateQuantity,
-      clearCart,
-      processOrder,
-      updateInventory,
-      addNewProduct,
-      updateProductImage,
-      deleteProduct,
-      getSalesAnalytics,
-      getDailyReport,
-      getSecurityLogs,
-      getCartTotal: () => cart.reduce((sum, item) => sum + (item.price * item.quantity), 0),
-      getCartCount: () => cart.reduce((count, item) => count + item.quantity, 0),
-      dailyCounter,
-      projectedEarnings,
-      dailySales,
-      customers
+      products, cart, orders, store, admin, customers, dailyCounter, securityLogs,
+      setStore: setStoreWithPersist,
+      setAdmin: setAdminWithPersist,
+      loadStoreData,
+      addToCart, removeFromCart, updateQuantity, clearCart, processOrder,
+      updateInventory, addNewProduct, deleteProduct,
+      getSalesAnalytics, getDailyReport, getInventoryValue, getSecurityLogs,
+      getCartTotal, getCartCount, addSecurityLog
     }}>
       {children}
     </AppContext.Provider>

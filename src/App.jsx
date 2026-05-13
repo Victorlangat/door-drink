@@ -5,14 +5,21 @@ import { AppProvider, AppContext } from './context/AppContext';
 import Navbar from './components/Navbar';
 import POS from './pages/POS';
 import Admin from './pages/Admin';
-import Login from './pages/Login';
+import StoreLogin from './pages/StoreLogin';
+import StoreSignup from './pages/StoreSignup';
+import AdminLogin from './pages/AdminLogin';
+import AdminRegister from './pages/AdminRegister';
+import AdminRedirect from './pages/AdminRedirect';
 
-const ProtectedRoute = ({ children, requireAdmin = false }) => {
-  const { user } = React.useContext(AppContext);
-  
-  if (!user) return <Navigate to="/login" />;
-  if (requireAdmin && !user.isAdmin) return <Navigate to="/pos" />;
-  
+const AdminRoute = ({ children }) => {
+  const { admin } = React.useContext(AppContext);
+  if (!admin) return <Navigate to="/admin/login" />;
+  return children;
+};
+
+const StoreRoute = ({ children }) => {
+  const { store } = React.useContext(AppContext);
+  if (!store) return <Navigate to="/login" />;
   return children;
 };
 
@@ -24,18 +31,14 @@ function App() {
           <Navbar />
           <main style={{ minHeight: 'calc(100vh - 60px)', paddingTop: '60px' }}>
             <Routes>
-              <Route path="/login" element={<Login />} />
-              <Route path="/pos" element={
-                <ProtectedRoute>
-                  <POS />
-                </ProtectedRoute>
-              } />
-              <Route path="/admin" element={
-                <ProtectedRoute requireAdmin>
-                  <Admin />
-                </ProtectedRoute>
-              } />
-              <Route path="/" element={<Navigate to="/pos" />} />
+              <Route path="/login" element={<StoreLogin />} />
+              <Route path="/signup" element={<StoreSignup />} />
+              <Route path="/pos" element={<StoreRoute><POS /></StoreRoute>} />
+              <Route path="/admin/check" element={<StoreRoute><AdminRedirect /></StoreRoute>} />
+              <Route path="/admin/login" element={<AdminLogin />} />
+              <Route path="/admin/register" element={<StoreRoute><AdminRegister /></StoreRoute>} />
+              <Route path="/admin" element={<AdminRoute><Admin /></AdminRoute>} />
+              <Route path="/" element={<Navigate to="/login" />} />
             </Routes>
           </main>
           <Toaster position="bottom-center" />

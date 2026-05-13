@@ -65,6 +65,115 @@ const POS = () => {
       setTimeout(() => setShowReceipt(false), 5000);
     }
   };
+  // Add this new component inside POS.jsx - above the main return
+
+const SellerAnalytics = ({ liveStats, topProducts }) => {
+  const [expanded, setExpanded] = useState(false);
+  
+  if (!liveStats) return null;
+  
+  return (
+    <div style={{
+      background: 'white',
+      borderRadius: '12px',
+      marginBottom: '1rem',
+      overflow: 'hidden',
+      boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+    }}>
+      <div 
+        onClick={() => setExpanded(!expanded)}
+        style={{
+          padding: '0.75rem 1rem',
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          color: 'white',
+          cursor: 'pointer',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <TrendingUp size={18} />
+          <span style={{ fontWeight: 600 }}>Today's Performance</span>
+        </div>
+        <span>{expanded ? '▼' : '▲'}</span>
+      </div>
+      
+      {expanded && (
+        <div style={{ padding: '1rem' }}>
+          {/* Today's Stats */}
+          <div style={{ 
+            display: 'grid', 
+            gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', 
+            gap: '0.75rem',
+            marginBottom: '1rem'
+          }}>
+            <div style={{ textAlign: 'center', padding: '0.75rem', background: '#f3f4f6', borderRadius: '10px' }}>
+              <div style={{ fontSize: '0.7rem', color: '#6b7280' }}>Today's Sales</div>
+              <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: '#10b981' }}>KSh {liveStats.todayRevenue.toLocaleString()}</div>
+            </div>
+            <div style={{ textAlign: 'center', padding: '0.75rem', background: '#f3f4f6', borderRadius: '10px' }}>
+              <div style={{ fontSize: '0.7rem', color: '#6b7280' }}>Transactions</div>
+              <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: '#3b82f6' }}>{liveStats.todayTransactions}</div>
+            </div>
+            <div style={{ textAlign: 'center', padding: '0.75rem', background: '#f3f4f6', borderRadius: '10px' }}>
+              <div style={{ fontSize: '0.7rem', color: '#6b7280' }}>Avg Order</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#f59e0b' }}>KSh {liveStats.averageOrderValue}</div>
+            </div>
+          </div>
+          
+          {/* Most Bought Drinks Today */}
+          {topProducts && topProducts.length > 0 && (
+            <div>
+              <h4 style={{ fontSize: '0.85rem', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <TrendingUp size={14} /> Most Bought Drinks Today
+              </h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                {topProducts.map((product, idx) => (
+                  <div key={product.name} style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.75rem',
+                    padding: '0.5rem',
+                    background: idx === 0 ? '#fef3c7' : '#f9fafb',
+                    borderRadius: '8px'
+                  }}>
+                    <div style={{
+                      width: '28px',
+                      height: '28px',
+                      borderRadius: '14px',
+                      background: idx === 0 ? '#f59e0b' : '#3b82f6',
+                      color: 'white',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontWeight: 'bold',
+                      fontSize: '0.8rem'
+                    }}>
+                      {idx + 1}
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 500, fontSize: '0.85rem' }}>{product.name}</div>
+                      <div style={{ fontSize: '0.7rem', color: '#6b7280' }}>{product.category}</div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{product.quantity} units</div>
+                      <div style={{ fontSize: '0.7rem', color: '#10b981' }}>KSh {product.revenue.toLocaleString()}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          <div style={{ marginTop: '0.75rem', paddingTop: '0.5rem', borderTop: '1px solid #e5e7eb', fontSize: '0.7rem', color: '#6b7280', textAlign: 'center' }}>
+            Next order #: {liveStats.currentCounter}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
   
   return (
     <div style={{ 
