@@ -1,3 +1,4 @@
+// src/pages/StoreSignup.jsx
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../services/supabase';
@@ -36,44 +37,27 @@ const StoreSignup = () => {
     setError(null);
     
     try {
-      // Check if store exists
-      const { data: existing } = await supabase
-        .from('stores')
-        .select('id')
-        .eq('store_email', formData.email)
-        .maybeSingle();
+      const { data, error: rpcError } = await supabase
+        .rpc('register_store', {
+          p_store_name: formData.storeName,
+          p_store_email: formData.email,
+          p_phone: formData.phone,
+          p_password: formData.password,
+          p_address: formData.address || null
+        });
       
-      if (existing) throw new Error('A store with this email already exists');
+      if (rpcError) {
+        console.error('RPC Error:', rpcError);
+        throw new Error(rpcError.message);
+      }
       
-      // Create store
-      const { data: storeData, error: storeError } = await supabase
-        .from('stores')
-        .insert([{
-          store_name: formData.storeName,
-          store_email: formData.email,
-          phone: formData.phone,
-          address: formData.address || null,
-          subscription_plan: 'free'
-        }])
-        .select()
-        .single();
-      
-      if (storeError) throw storeError;
-      
-      // Create daily sales record
-      const today = new Date().toISOString().split('T')[0];
-      await supabase.from('daily_sales').insert([{
-        store_id: storeData.id,
-        sale_date: today,
-        total_revenue: 0,
-        transaction_count: 0,
-        counter_number: 0
-      }]);
+      if (!data.success) throw new Error(data.error || 'Registration failed');
       
       setSuccess(true);
       setTimeout(() => navigate('/login'), 2000);
       
     } catch (err) {
+      console.error('Registration error:', err);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -98,7 +82,7 @@ const StoreSignup = () => {
         <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
           <UserPlus size={48} color="#10b981" />
           <h1 style={{ fontSize: '1.8rem', fontWeight: 'bold' }}>Register Your Store</h1>
-          <p style={{ color: '#6b7280' }}>Start selling with SipSync POS</p>
+          <p style={{ color: '#6b7280' }}>Start selling with Nexus POS</p>
         </div>
         
         {error && (

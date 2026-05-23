@@ -14,52 +14,82 @@ export const AppProvider = ({ children }) => {
   const [dailyCounter, setDailyCounter] = useState(0);
   const [loading, setLoading] = useState(true);
   const [securityLogs, setSecurityLogs] = useState([]);
+  const [userRole, setUserRole] = useState(null);
   
   // Load saved data on startup
   useEffect(() => {
-    const savedStore = localStorage.getItem('sipsync_store');
-    const savedAdmin = localStorage.getItem('sipsync_admin');
-    
-    if (savedStore) {
-      try {
-        const storeData = JSON.parse(savedStore);
-        setStore(storeData);
-        setCurrentStore(storeData.id);
-        loadStoreData(storeData.id);
-      } catch (e) {
-        console.error('Error loading store:', e);
+    const initStore = async () => {
+      const savedStore = localStorage.getItem('sipsync_store');
+      const savedAdmin = localStorage.getItem('sipsync_admin');
+      const savedUserRole = localStorage.getItem('sipsync_user_role');
+      
+      console.log('Restoring session - Store:', savedStore ? 'Found' : 'Not found');
+      console.log('Restoring session - Admin:', savedAdmin ? 'Found' : 'Not found');
+      console.log('Restoring session - User Role:', savedUserRole);
+      
+      if (savedUserRole) {
+        setUserRole(savedUserRole);
       }
-    }
-    
-    if (savedAdmin) {
-      try {
-        setAdmin(JSON.parse(savedAdmin));
-      } catch (e) {
-        console.error('Error loading admin:', e);
+      
+      if (savedStore) {
+        try {
+          const storeData = JSON.parse(savedStore);
+          setStore(storeData);
+          setCurrentStore(storeData.id);
+          await loadStoreData(storeData.id);
+        } catch (e) {
+          console.error('Error loading store:', e);
+        }
       }
-    }
+      
+      if (savedAdmin) {
+        try {
+          const adminData = JSON.parse(savedAdmin);
+          setAdmin(adminData);
+        } catch (e) {
+          console.error('Error loading admin:', e);
+        }
+      }
+      
+      setLoading(false);
+    };
     
-    setLoading(false);
+    initStore();
   }, []);
   
-  // Persist store
-  const setStoreWithPersist = (storeData) => {
+  // Persist store with RLS context
+  const setStoreWithPersist = async (storeData) => {
+    console.log('Setting store with persist:', storeData);
     setStore(storeData);
     if (storeData) {
       localStorage.setItem('sipsync_store', JSON.stringify(storeData));
-      setCurrentStore(storeData.id);
+      await setCurrentStore(storeData.id);
     } else {
       localStorage.removeItem('sipsync_store');
+      localStorage.removeItem('sipsync_session_token');
     }
   };
   
   // Persist admin
   const setAdminWithPersist = (adminData) => {
+    console.log('Setting admin with persist:', adminData);
     setAdmin(adminData);
     if (adminData) {
       localStorage.setItem('sipsync_admin', JSON.stringify(adminData));
+      setUserRoleWithPersist('admin');
     } else {
       localStorage.removeItem('sipsync_admin');
+    }
+  };
+  
+  // Set user role
+  const setUserRoleWithPersist = (role) => {
+    console.log('Setting user role:', role);
+    setUserRole(role);
+    if (role) {
+      localStorage.setItem('sipsync_user_role', role);
+    } else {
+      localStorage.removeItem('sipsync_user_role');
     }
   };
   
@@ -67,103 +97,80 @@ export const AppProvider = ({ children }) => {
   const addSecurityLog = async (action, details) => {
     if (!store) return;
     
-    const newLog = {
-      store_id: store.id,
-      action: action,
-      details: details,
-      user_email: admin?.email || store?.store_email || 'system',
-      created_at: new Date().toISOString()
-    };
+    const userEmail = admin?.email || store?.store_email || 'system';
+    const now = new Date();
+    const timestamp = now.toISOString();
     
     try {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('security_logs')
-        .insert([newLog])
-        .select();
+        .insert([{
+          store_id: store.id,
+          action: action,
+          details: details,
+          user_email: userEmail,
+          created_at: timestamp
+        }]);
       
-      if (!error && data) {
-        setSecurityLogs(prev => [data[0], ...prev]);
+      if (!error) {
+        const { data: logsData } = await supabase
+          .from('security_logs')
+          .select('*')
+          .eq('store_id', store.id)
+          .order('created_at', { ascending: false })
+          .limit(200);
+        if (logsData) setSecurityLogs(logsData);
       }
     } catch (err) {
       console.error('Error adding security log:', err);
     }
   };
   
-  // Load store data
   const loadStoreData = async (storeId) => {
     setLoading(true);
+    await setCurrentStore(storeId);
+    
     try {
-      // Load products
-      const { data: productsData, error: productsError } = await supabase
+      const { data: productsData } = await supabase
         .from('products')
         .select('*')
-        .eq('store_id', storeId);
-      
-      if (productsError) throw productsError;
+        .eq('store_id', storeId)
+        .order('name', { ascending: true });
       setProducts(productsData || []);
       
-      // Load orders
-      const { data: ordersData, error: ordersError } = await supabase
+      const { data: ordersData } = await supabase
         .from('orders')
         .select('*')
         .eq('store_id', storeId)
         .order('created_at', { ascending: false });
-      
-      if (ordersError) throw ordersError;
       setOrders(ordersData || []);
       
-      // Load customers
-      const { data: customersData, error: customersError } = await supabase
+      const { data: customersData } = await supabase
         .from('customers')
         .select('*')
         .eq('store_id', storeId)
         .order('total_spent', { ascending: false });
-      
-      if (customersError) throw customersError;
       setCustomers(customersData || []);
       
-      // Load security logs
-      const { data: logsData, error: logsError } = await supabase
+      const { data: logsData } = await supabase
         .from('security_logs')
         .select('*')
         .eq('store_id', storeId)
         .order('created_at', { ascending: false })
         .limit(200);
-      
-      if (logsError) throw logsError;
       setSecurityLogs(logsData || []);
       
-      // Get today's counter from daily_sales table
       const today = new Date().toISOString().split('T')[0];
-      const { data: todayData, error: todayError } = await supabase
+      const { data: todayData } = await supabase
         .from('daily_sales')
-        .select('transaction_count, counter_number')
+        .select('transaction_count')
         .eq('store_id', storeId)
         .eq('sale_date', today)
         .maybeSingle();
       
-      if (!todayError && todayData) {
-        setDailyCounter(todayData.transaction_count || 0);
-      } else {
-        // If no daily sales record exists for today, create one
-        const { error: insertError } = await supabase
-          .from('daily_sales')
-          .insert([{
-            store_id: storeId,
-            sale_date: today,
-            total_revenue: 0,
-            transaction_count: 0,
-            counter_number: 0
-          }]);
-        
-        if (!insertError) {
-          setDailyCounter(0);
-        }
-      }
-      
+      setDailyCounter(todayData?.transaction_count || 0);
     } catch (err) {
       console.error('Error loading store data:', err);
-      toast.error('Failed to load store data');
     } finally {
       setLoading(false);
     }
@@ -179,7 +186,6 @@ export const AppProvider = ({ children }) => {
     localStorage.setItem('sipsync_cart', JSON.stringify(cart));
   }, [cart]);
   
-  // Cart functions
   const addToCart = (product, quantity = 1) => {
     const existing = cart.find(item => item.id === product.id);
     if (existing) {
@@ -202,7 +208,7 @@ export const AppProvider = ({ children }) => {
   const removeFromCart = (id) => {
     const item = cart.find(i => i.id === id);
     setCart(cart.filter(i => i.id !== id));
-    if (item) toast.success(`${item.name} removed`);
+    toast.success(`${item?.name} removed`);
   };
   
   const updateQuantity = (id, quantity) => {
@@ -223,17 +229,19 @@ export const AppProvider = ({ children }) => {
     toast.success('Cart cleared');
   };
   
-  // Process order
+  // OPTIMIZED PROCESS ORDER - FAST AND RELIABLE
   const processOrder = async (paymentMethod, customerName = '', customerPhone = '') => {
     if (cart.length === 0) {
       toast.error('Cart is empty!');
       return false;
     }
+    
     if (!store) {
       toast.error('No store selected!');
       return false;
     }
     
+    // Quick stock validation
     for (const item of cart) {
       const product = products.find(p => p.id === item.id);
       if (item.quantity > product.stock) {
@@ -244,84 +252,101 @@ export const AppProvider = ({ children }) => {
     
     const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
     const orderNumber = `POS-${String((dailyCounter || 0) + 1).padStart(4, '0')}`;
+    const timestamp = new Date().toISOString();
+    const orderItems = cart.map(item => ({ 
+      id: item.id, 
+      name: item.name, 
+      quantity: item.quantity, 
+      price: item.price,
+      category: item.category 
+    }));
     
     try {
-      // Update product stocks
-      for (const item of cart) {
+      // OPTIMIZATION: Update all product stocks in parallel
+      const stockUpdatePromises = cart.map(item => {
         const product = products.find(p => p.id === item.id);
-        await supabase
+        return supabase
           .from('products')
           .update({ stock: product.stock - item.quantity })
           .eq('id', item.id)
           .eq('store_id', store.id);
-      }
+      });
       
-      // Save order
-      const { data: newOrder, error: orderError } = await supabase
+      // Create order
+      const orderPromise = supabase
         .from('orders')
         .insert([{
           store_id: store.id,
           order_number: orderNumber,
-          items: cart.map(item => ({ 
-            id: item.id, 
-            name: item.name, 
-            quantity: item.quantity, 
-            price: item.price,
-            category: item.category 
-          })),
+          items: orderItems,
           total: total,
           payment_method: paymentMethod,
           customer_name: customerName || 'Walk-in Customer',
           customer_phone: customerPhone,
-          created_at: new Date().toISOString()
-        }])
-        .select();
+          created_at: timestamp
+        }]);
       
-      if (orderError) throw orderError;
+      // Run all updates in parallel
+      await Promise.all([...stockUpdatePromises, orderPromise]);
       
-      // Update or create customer
+      // Handle customer in background (non-blocking)
       if (customerName && customerPhone) {
-        const { data: existingCustomer } = await supabase
+        supabase
           .from('customers')
-          .select('*')
+          .select('id, total_spent, order_count')
           .eq('phone', customerPhone)
           .eq('store_id', store.id)
-          .maybeSingle();
-        
-        if (existingCustomer) {
-          await supabase
-            .from('customers')
-            .update({
-              total_spent: (existingCustomer.total_spent || 0) + total,
-              order_count: (existingCustomer.order_count || 0) + 1,
-              last_order: new Date().toISOString()
-            })
-            .eq('id', existingCustomer.id);
-        } else {
-          await supabase.from('customers').insert([{
-            store_id: store.id,
-            name: customerName,
-            phone: customerPhone,
-            total_spent: total,
-            order_count: 1,
-            first_order: new Date().toISOString(),
-            last_order: new Date().toISOString()
-          }]);
-        }
+          .maybeSingle()
+          .then(async ({ data: existingCustomer }) => {
+            if (existingCustomer) {
+              await supabase
+                .from('customers')
+                .update({
+                  total_spent: (existingCustomer.total_spent || 0) + total,
+                  order_count: (existingCustomer.order_count || 0) + 1,
+                  last_order: timestamp
+                })
+                .eq('id', existingCustomer.id);
+            } else {
+              await supabase.from('customers').insert([{
+                store_id: store.id,
+                name: customerName,
+                phone: customerPhone,
+                total_spent: total,
+                order_count: 1,
+                first_order: timestamp,
+                last_order: timestamp
+              }]);
+            }
+          });
       }
       
-      // Add security log
-      await addSecurityLog(
-        'ORDER_COMPLETED',
-        `Order #${orderNumber} | Total: KSh ${total} | Items: ${cart.length} | Payment: ${paymentMethod}`
-      );
+      // Security log in background
+      supabase
+        .from('security_logs')
+        .insert([{
+          store_id: store.id,
+          action: 'ORDER_COMPLETED',
+          details: `Order #${orderNumber} | Total: KSh ${total} | Items: ${cart.length} | Payment: ${paymentMethod}`,
+          user_email: admin?.email || store?.store_email || 'system',
+          created_at: timestamp
+        }]);
       
-      // Refresh all data
-      await loadStoreData(store.id);
+      // Update local state immediately (optimistic update)
+      const updatedProducts = products.map(product => {
+        const cartItem = cart.find(item => item.id === product.id);
+        if (cartItem) {
+          return { ...product, stock: product.stock - cartItem.quantity };
+        }
+        return product;
+      });
+      setProducts(updatedProducts);
+      setDailyCounter(prev => prev + 1);
       setCart([]);
       
       toast.success(`Order ${orderNumber} completed!`);
       return { success: true, orderNumber, total };
+      
     } catch (error) {
       console.error('Order error:', error);
       toast.error('Failed to process order');
@@ -329,38 +354,79 @@ export const AppProvider = ({ children }) => {
     }
   };
   
-  // Admin functions
   const updateInventory = async (productId, newStock) => {
+    if (!store) return;
     const product = products.find(p => p.id === productId);
     await supabase
       .from('products')
       .update({ stock: newStock })
       .eq('id', productId)
       .eq('store_id', store.id);
-    
     setProducts(products.map(p => p.id === productId ? { ...p, stock: newStock } : p));
     await addSecurityLog('INVENTORY_UPDATE', `${product?.name}: ${product?.stock} → ${newStock}`);
     toast.success('Inventory updated');
   };
   
   const addNewProduct = async (product) => {
-    const { data, error } = await supabase
-      .from('products')
-      .insert([{
-        store_id: store.id,
-        name: product.name,
-        category: product.category || 'Uncategorized',
-        price: parseFloat(product.price),
-        stock: parseInt(product.stock)
-      }])
-      .select()
-      .single();
+    if (!store) {
+      toast.error('No store selected. Please login again.');
+      return null;
+    }
     
-    if (error) throw error;
-    setProducts([...products, data]);
-    await addSecurityLog('PRODUCT_ADDED', `Added: ${product.name} (Price: KSh ${product.price}, Stock: ${product.stock})`);
-    toast.success('Product added');
-    return data;
+    const cleanName = product.name.trim();
+    const cleanCategory = product.category?.trim() || 'Uncategorized';
+    const cleanPrice = parseFloat(product.price);
+    const cleanStock = parseInt(product.stock);
+    
+    try {
+      const { data: existingProduct } = await supabase
+        .from('products')
+        .select('id, stock')
+        .eq('store_id', store.id)
+        .eq('name', cleanName)
+        .eq('category', cleanCategory)
+        .maybeSingle();
+      
+      if (existingProduct) {
+        const newStock = existingProduct.stock + cleanStock;
+        await supabase
+          .from('products')
+          .update({ stock: newStock, price: cleanPrice })
+          .eq('id', existingProduct.id);
+        
+        setProducts(products.map(p => 
+          p.id === existingProduct.id ? { ...p, stock: newStock, price: cleanPrice } : p
+        ));
+        
+        await addSecurityLog('INVENTORY_UPDATE', `Updated: ${cleanName} - Stock +${cleanStock} (New: ${newStock})`);
+        toast.success(`${cleanName} stock updated! New stock: ${newStock}`);
+        return { ...existingProduct, stock: newStock };
+      }
+      
+      const { data, error } = await supabase
+        .from('products')
+        .insert([{
+          store_id: store.id,
+          name: cleanName,
+          category: cleanCategory,
+          price: cleanPrice,
+          stock: cleanStock,
+          image_url: product.image_url || null
+        }])
+        .select()
+        .single();
+      
+      if (error) throw error;
+      
+      setProducts([...products, data]);
+      await addSecurityLog('PRODUCT_ADDED', `Added: ${cleanName} (${cleanCategory}) | Price: KSh ${cleanPrice} | Stock: ${cleanStock}`);
+      toast.success(`New product "${cleanName}" added`);
+      return data;
+    } catch (error) {
+      console.error('Add product error:', error);
+      toast.error(error.message);
+      throw error;
+    }
   };
   
   const deleteProduct = async (productId) => {
@@ -370,13 +436,11 @@ export const AppProvider = ({ children }) => {
       .delete()
       .eq('id', productId)
       .eq('store_id', store.id);
-    
     setProducts(products.filter(p => p.id !== productId));
     await addSecurityLog('PRODUCT_DELETED', `Deleted: ${product?.name}`);
     toast.success('Product deleted');
   };
   
-  // Analytics functions
   const getSalesAnalytics = async () => {
     if (!store) return { totalRevenue: 0, totalOrders: 0, averageOrderValue: 0, categorySales: {}, topProducts: [], repeatCustomers: 0 };
     
@@ -388,13 +452,7 @@ export const AppProvider = ({ children }) => {
     const totalRevenue = (ordersList || []).reduce((sum, o) => sum + (o.total || 0), 0);
     const totalOrders = ordersList?.length || 0;
     const averageOrderValue = totalOrders ? (totalRevenue / totalOrders).toFixed(2) : 0;
-    
-    // Get fresh customers for repeat count
-    const { data: customersList } = await supabase
-      .from('customers')
-      .select('*')
-      .eq('store_id', store.id);
-    const repeatCustomers = (customersList || []).filter(c => (c.order_count || 0) > 1).length;
+    const repeatCustomers = customers.filter(c => (c.order_count || 0) > 1).length;
     
     const categorySales = {};
     (ordersList || []).forEach(order => {
@@ -427,7 +485,6 @@ export const AppProvider = ({ children }) => {
     if (!store) return { date: new Date().toDateString(), transactionCount: 0, totalRevenue: 0, transactions: [], counterNumber: 0 };
     
     const today = new Date().toISOString().split('T')[0];
-    
     const { data: todayOrders } = await supabase
       .from('orders')
       .select('*')
@@ -439,39 +496,46 @@ export const AppProvider = ({ children }) => {
     const transactions = (todayOrders || []).map(o => ({
       id: o.id,
       orderNumber: o.order_number,
-      time: new Date(o.created_at).toLocaleTimeString(),
+      time: o.created_at,
       customerName: o.customer_name,
       paymentMethod: o.payment_method,
       total: o.total || 0
     }));
     
-    const totalRevenue = transactions.reduce((sum, t) => sum + t.total, 0);
-    
     return {
       date: today,
       transactionCount: transactions.length,
-      totalRevenue,
+      totalRevenue: transactions.reduce((sum, t) => sum + t.total, 0),
       transactions,
       counterNumber: dailyCounter
     };
   };
   
-  const getSecurityLogs = async () => {
-    if (!store) return [];
-    return securityLogs;
-  };
-  
-  const getInventoryValue = () => {
-    return products.reduce((sum, p) => sum + ((p.price || 0) * (p.stock || 0)), 0);
-  };
-  
+  const getInventoryValue = () => products.reduce((sum, p) => sum + ((p.price || 0) * (p.stock || 0)), 0);
   const getCartTotal = () => cart.reduce((sum, item) => sum + ((item.price || 0) * (item.quantity || 0)), 0);
   const getCartCount = () => cart.reduce((count, item) => count + (item.quantity || 0), 0);
   
-  if (loading && !store) {
+  const logout = () => {
+    setStore(null);
+    setAdmin(null);
+    setProducts([]);
+    setCart([]);
+    setOrders([]);
+    setCustomers([]);
+    setSecurityLogs([]);
+    setUserRole(null);
+    localStorage.removeItem('sipsync_store');
+    localStorage.removeItem('sipsync_admin');
+    localStorage.removeItem('sipsync_cart');
+    localStorage.removeItem('sipsync_session_token');
+    localStorage.removeItem('sipsync_user_role');
+    toast.success('Logged out successfully');
+  };
+  
+  if (loading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-        <div>Loading...</div>
+        <div className="spinner" style={{ width: '40px', height: '40px' }}></div>
       </div>
     );
   }
@@ -479,13 +543,15 @@ export const AppProvider = ({ children }) => {
   return (
     <AppContext.Provider value={{
       products, cart, orders, store, admin, customers, dailyCounter, securityLogs,
-      setStore: setStoreWithPersist,
+      userRole,
+      setStore: setStoreWithPersist, 
       setAdmin: setAdminWithPersist,
+      setUserRole: setUserRoleWithPersist,
       loadStoreData,
       addToCart, removeFromCart, updateQuantity, clearCart, processOrder,
       updateInventory, addNewProduct, deleteProduct,
-      getSalesAnalytics, getDailyReport, getInventoryValue, getSecurityLogs,
-      getCartTotal, getCartCount, addSecurityLog
+      getSalesAnalytics, getDailyReport, getInventoryValue, getSecurityLogs: () => securityLogs,
+      getCartTotal, getCartCount, addSecurityLog, logout
     }}>
       {children}
     </AppContext.Provider>

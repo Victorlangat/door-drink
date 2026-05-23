@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabase';
 import { Calendar, Download, ChevronLeft, ChevronRight, FileText } from 'lucide-react';
+import { formatLocalTime, formatDate, formatTime } from '../utils/timezone';
 
 const PastRecordsView = ({ storeId, onClose }) => {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
@@ -32,7 +33,6 @@ const PastRecordsView = ({ storeId, onClose }) => {
   const loadDataForDate = async (date) => {
     setLoading(true);
     try {
-      // Get daily summary
       const { data: dailySummary } = await supabase
         .from('daily_sales')
         .select('*')
@@ -40,7 +40,6 @@ const PastRecordsView = ({ storeId, onClose }) => {
         .eq('sale_date', date)
         .maybeSingle();
 
-      // Get orders for that day
       const { data: ordersData } = await supabase
         .from('orders')
         .select('*')
@@ -61,10 +60,10 @@ const PastRecordsView = ({ storeId, onClose }) => {
   const exportToCSV = () => {
     if (!orders.length) return;
     
-    const headers = ['Order #', 'Time', 'Customer', 'Payment', 'Items', 'Total'];
+    const headers = ['Order #', 'Time (Local)', 'Customer', 'Payment', 'Items', 'Total'];
     const rows = orders.map(order => [
       order.order_number,
-      new Date(order.created_at).toLocaleTimeString(),
+      formatLocalTime(order.created_at, true),
       order.customer_name || 'Walk-in Customer',
       order.payment_method || 'cash',
       order.items?.length || 0,
@@ -88,6 +87,7 @@ const PastRecordsView = ({ storeId, onClose }) => {
   };
 
   const totalRevenue = orders.reduce((sum, o) => sum + (o.total || 0), 0);
+  const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   return (
     <div style={{
@@ -165,7 +165,13 @@ const PastRecordsView = ({ storeId, onClose }) => {
                 />
               </div>
               <p style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: '0.25rem' }}>
-                {new Date(selectedDate).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                {new Date(selectedDate).toLocaleDateString('en-US', { 
+                  weekday: 'long', 
+                  year: 'numeric', 
+                  month: 'long', 
+                  day: 'numeric',
+                  timeZone: userTimezone
+                })}
               </p>
             </div>
             <button onClick={() => changeDate(1)} style={{
@@ -215,7 +221,7 @@ const PastRecordsView = ({ storeId, onClose }) => {
 
         {/* Orders Table */}
         <div style={{ background: 'white', padding: '1.25rem', borderRadius: '16px', overflowX: 'auto' }}>
-          <h3 style={{ marginBottom: '1rem' }}>Orders for {new Date(selectedDate).toLocaleDateString()}</h3>
+          <h3 style={{ marginBottom: '1rem' }}>Orders for {formatDate(selectedDate)} ({userTimezone.split('/').pop()} time)</h3>
           {loading ? (
             <div style={{ textAlign: 'center', padding: '3rem' }}>Loading...</div>
           ) : orders.length > 0 ? (
@@ -223,7 +229,7 @@ const PastRecordsView = ({ storeId, onClose }) => {
               <thead>
                 <tr style={{ background: '#f3f4f6' }}>
                   <th style={{ padding: '0.75rem', textAlign: 'left' }}>Order #</th>
-                  <th style={{ padding: '0.75rem', textAlign: 'left' }}>Time</th>
+                  <th style={{ padding: '0.75rem', textAlign: 'left' }}>Time ({userTimezone.split('/').pop()})</th>
                   <th style={{ padding: '0.75rem', textAlign: 'left' }}>Customer</th>
                   <th style={{ padding: '0.75rem', textAlign: 'left' }}>Payment</th>
                   <th style={{ padding: '0.75rem', textAlign: 'center' }}>Items</th>
@@ -234,7 +240,7 @@ const PastRecordsView = ({ storeId, onClose }) => {
                 {orders.map(order => (
                   <tr key={order.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
                     <td style={{ padding: '0.75rem' }}>{order.order_number}</td>
-                    <td style={{ padding: '0.75rem' }}>{new Date(order.created_at).toLocaleTimeString()}</td>
+                    <td style={{ padding: '0.75rem' }}>{formatTime(order.created_at)}</td>
                     <td style={{ padding: '0.75rem' }}>{order.customer_name || 'Walk-in Customer'}</td>
                     <td style={{ padding: '0.75rem' }}>{order.payment_method || 'cash'}</td>
                     <td style={{ padding: '0.75rem', textAlign: 'center' }}>{order.items?.length || 0}</td>
@@ -244,8 +250,7 @@ const PastRecordsView = ({ storeId, onClose }) => {
               </tbody>
               <tfoot style={{ background: '#f3f4f6' }}>
                 <tr>
-                  <td colSpan="5" style={{ padding: '0.75rem', textAlign: 'right', fontWeight: 'bold' }}>Total:
-                  </td>
+                  <td colSpan="5" style={{ padding: '0.75rem', textAlign: 'right', fontWeight: 'bold' }}>Total:</td>
                   <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: 'bold' }}>KSh {totalRevenue.toLocaleString()}</td>
                 </tr>
               </tfoot>

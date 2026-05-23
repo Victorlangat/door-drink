@@ -42,8 +42,8 @@ const Login = () => {
           <div style={{ background: '#3b82f6', width: '60px', height: '60px', borderRadius: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
             <ShoppingBag size={32} color="white" />
           </div>
-          <h1 style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#1f2937' }}>SipSync</h1>
-          <p style={{ color: '#6b7280', marginTop: '0.25rem' }}>POS & Inventory System</p>
+          <h1 style={{ fontSize: '1.8rem', fontWeight: 'bold', marginTop: '0.5rem' }}>Nexus POS</h1>
+            <p style={{ color: '#6b7280' }}>Store Login</p>
         </div>
         
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>

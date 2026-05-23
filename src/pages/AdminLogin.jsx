@@ -10,8 +10,16 @@ const AdminLogin = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const { setAdmin, setStore } = useContext(AppContext);
+  const { setAdmin, setStore, store } = useContext(AppContext);
   const navigate = useNavigate();
+
+  // If already logged in as admin, redirect to admin dashboard
+  React.useEffect(() => {
+    const savedAdmin = localStorage.getItem('sipsync_admin');
+    if (savedAdmin) {
+      navigate('/admin');
+    }
+  }, [navigate]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -19,11 +27,18 @@ const AdminLogin = () => {
     setError(null);
     
     try {
+      // Check if admin exists with this email
       const { data, error } = await supabase
         .from('admin_users')
         .select(`
-          id, email, password_hash, full_name, role, is_active, store_id,
-          stores (id, store_name, store_email, subscription_plan)
+          id, 
+          email, 
+          password_hash, 
+          full_name, 
+          role, 
+          is_active, 
+          store_id,
+          stores!inner (id, store_name, store_email, subscription_plan)
         `)
         .eq('email', email)
         .eq('is_active', true)
@@ -31,19 +46,33 @@ const AdminLogin = () => {
       
       if (error || !data) throw new Error('Admin not found');
       
+      // Verify password
       const isValid = await bcrypt.compare(password, data.password_hash);
       if (!isValid) throw new Error('Invalid password');
       
+      // Update last login
       await supabase.from('admin_users').update({ last_login: new Date() }).eq('id', data.id);
       
-      setAdmin({
+      // Get store data
+      const storeData = data.stores;
+      
+      // Set admin and store in context
+      const adminData = {
         id: data.id,
         email: data.email,
         fullName: data.full_name,
         role: data.role,
-        store: data.stores
-      });
-      setStore(data.stores);
+        store: storeData
+      };
+      
+      setAdmin(adminData);
+      
+      // If store is not set in context, set it
+      if (!store) {
+        setStore(storeData);
+      }
+      
+      // Navigate to admin dashboard
       navigate('/admin');
       
     } catch (err) {
@@ -72,15 +101,33 @@ const AdminLogin = () => {
         <form onSubmit={handleLogin}>
           <div style={{ marginBottom: '1rem' }}>
             <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>Admin Email</label>
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="admin@yourstore.com" required style={{ width: '100%', padding: '0.75rem', border: '1px solid #e5e7eb', borderRadius: '10px' }} />
+            <input 
+              type="email" 
+              value={email} 
+              onChange={(e) => setEmail(e.target.value)} 
+              placeholder="admin@yourstore.com" 
+              required 
+              style={{ width: '100%', padding: '0.75rem', border: '1px solid #e5e7eb', borderRadius: '10px' }} 
+            />
           </div>
           
           <div style={{ marginBottom: '1.5rem' }}>
             <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>Password</label>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required style={{ width: '100%', padding: '0.75rem', border: '1px solid #e5e7eb', borderRadius: '10px' }} />
+            <input 
+              type="password" 
+              value={password} 
+              onChange={(e) => setPassword(e.target.value)} 
+              placeholder="••••••••" 
+              required 
+              style={{ width: '100%', padding: '0.75rem', border: '1px solid #e5e7eb', borderRadius: '10px' }} 
+            />
           </div>
           
-          <button type="submit" disabled={loading} style={{ width: '100%', background: '#8b5cf6', color: 'white', border: 'none', padding: '0.875rem', borderRadius: '10px', fontWeight: '600', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}>
+          <button 
+            type="submit" 
+            disabled={loading} 
+            style={{ width: '100%', background: '#8b5cf6', color: 'white', border: 'none', padding: '0.875rem', borderRadius: '10px', fontWeight: '600', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}
+          >
             <LogIn size={18} style={{ display: 'inline', marginRight: '0.5rem' }} />
             {loading ? 'Logging in...' : 'Access Admin Panel'}
           </button>

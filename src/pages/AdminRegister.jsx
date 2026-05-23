@@ -6,7 +6,7 @@ import bcrypt from 'bcryptjs';
 import { Shield, Mail, Lock, User, AlertCircle, CheckCircle, ArrowLeft } from 'lucide-react';
 
 const AdminRegister = () => {
-  const { store } = useContext(AppContext);
+  const { store, setAdmin } = useContext(AppContext);
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -19,7 +19,10 @@ const AdminRegister = () => {
   });
 
   useEffect(() => {
-    if (!store) navigate('/login');
+    // If no store, redirect to login
+    if (!store) {
+      navigate('/login');
+    }
   }, [store, navigate]);
 
   const handleChange = (e) => {
@@ -42,7 +45,7 @@ const AdminRegister = () => {
     try {
       const hashedPassword = await bcrypt.hash(formData.password, 10);
       
-      const { error: insertError } = await supabase
+      const { data, error: insertError } = await supabase
         .from('admin_users')
         .insert([{
           store_id: store.id,
@@ -51,21 +54,40 @@ const AdminRegister = () => {
           full_name: formData.fullName,
           role: 'admin',
           is_active: true
-        }]);
+        }])
+        .select()
+        .single();
       
       if (insertError) throw insertError;
       
+      // Set admin in context and localStorage
+      const adminData = {
+        id: data.id,
+        email: data.email,
+        fullName: data.full_name,
+        role: data.role,
+        store: store
+      };
+      setAdmin(adminData);
+      
       setSuccess(true);
-      setTimeout(() => navigate('/admin/login'), 2000);
+      setTimeout(() => navigate('/admin'), 2000);
       
     } catch (err) {
+      console.error('Admin registration error:', err);
       setError(err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  if (!store) return null;
+  if (!store) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div>Loading...</div>
+      </div>
+    );
+  }
   
   if (success) {
     return (
@@ -73,7 +95,7 @@ const AdminRegister = () => {
         <div style={{ background: 'white', padding: '2rem', borderRadius: '20px', maxWidth: '400px', width: '100%', textAlign: 'center' }}>
           <CheckCircle size={64} color="#10b981" style={{ marginBottom: '1rem' }} />
           <h2>Admin Created Successfully!</h2>
-          <p>Redirecting to admin login...</p>
+          <p>Redirecting to admin dashboard...</p>
         </div>
       </div>
     );

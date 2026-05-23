@@ -18,6 +18,7 @@ const StoreLogin = () => {
     setError(null);
     
     try {
+      // Check if store exists with this email
       const { data: storeData, error: storeError } = await supabase
         .from('stores')
         .select('*')
@@ -28,11 +29,16 @@ const StoreLogin = () => {
         throw new Error('Invalid credentials. Please check your email.');
       }
       
+      // For store login, we're using email only (password can be added later)
+      // Set store in context
       setStore(storeData);
       await loadStoreData(storeData.id);
+      
+      // Navigate to POS - no automatic admin detection
       navigate('/pos');
       
     } catch (err) {
+      console.error('Login error:', err);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -142,6 +148,12 @@ const StoreLogin = () => {
             <Link to="/signup" style={{ color: '#10b981', textDecoration: 'none', fontWeight: 500 }}>
               Register here
             </Link>
+          </p>
+        </div>
+        
+        <div style={{ marginTop: '1rem', textAlign: 'center' }}>
+          <p style={{ fontSize: '0.7rem', color: '#9ca3af' }}>
+            Demo: Any email works
           </p>
         </div>
       </div>

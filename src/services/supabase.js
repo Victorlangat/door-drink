@@ -7,8 +7,20 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let currentStoreId = null;
 
-export const setCurrentStore = (storeId) => {
+export const setCurrentStore = async (storeId) => {
   currentStoreId = storeId;
+  console.log('Setting current store ID:', storeId);
+  
+  try {
+    const { error } = await supabase.rpc('set_current_store', { p_store_id: storeId });
+    if (error) {
+      console.error('Error setting current store RPC:', error);
+    } else {
+      console.log('Current store set successfully via RPC');
+    }
+  } catch (err) {
+    console.error('RPC call failed:', err);
+  }
 };
 
 export const getCurrentStore = () => currentStoreId;
